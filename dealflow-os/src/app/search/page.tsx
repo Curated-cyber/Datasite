@@ -1,411 +1,263 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useState, useMemo } from "react"
+import Link from "next/link"
+import { Input } from "@/components/ui/input"
 import {
-  Sparkles, Search, ArrowRight, Building2, Users, Briefcase,
-  CalendarDays, Loader2, CornerDownLeft, X, Clock,
+  Search, Briefcase, Users, Building2, CalendarDays, FileText,
+  ArrowRight, X,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
+
+// ── Mock data ─────────────────────────────────────────────────────────────────
+
+const DEALS = [
+  { id: "badia",     name: "Badia Spices",        sector: "Consumer / Food",  stage: "LOI",             banker: "Goldman Sachs",   ebitda: "$85M",  ev: "$952M" },
+  { id: "meridian",  name: "Meridian Logistics",   sector: "Transportation",   stage: "Due Diligence",    banker: "Jefferies",       ebitda: "$38M",  ev: "$422M" },
+  { id: "nova",      name: "Nova Health Systems",  sector: "Healthcare",       stage: "Mgmt Meeting",     banker: "William Blair",   ebitda: "$24M",  ev: "$281M" },
+  { id: "clearpath", name: "ClearPath Analytics",  sector: "Technology",       stage: "IC Approved",      banker: "Houlihan Lokey",  ebitda: "$9M",   ev: "$162M" },
+  { id: "peak",      name: "Peak Industrial",      sector: "Industrials",      stage: "Initial Review",   banker: "Baird",           ebitda: "$19M",  ev: "$190M" },
+  { id: "bluecrest", name: "BlueCrest Pharma",     sector: "Healthcare",       stage: "Closed",           banker: "Lazard",          ebitda: "$62M",  ev: "$680M" },
+]
+
+const CONTACTS = [
+  { id: "c1", name: "Marcus Reinholt",  title: "Managing Director", firm: "Goldman Sachs",          type: "Banker",     deal: "Badia Spices" },
+  { id: "c2", name: "Sofia Badia",      title: "CEO & Founder",     firm: "Badia Spices",           type: "Founder",    deal: "Badia Spices" },
+  { id: "c3", name: "Derek Cho",        title: "VP — Coverage",     firm: "Jefferies",              type: "Banker",     deal: "Meridian Logistics" },
+  { id: "c4", name: "Priya Venkatesh", title: "CFO",               firm: "Meridian Logistics",     type: "Management", deal: "Meridian Logistics" },
+  { id: "c5", name: "Thomas Laurier",  title: "Director, Lev Fin", firm: "JPMorgan",               type: "Lender",     deal: "Badia Spices, Meridian" },
+  { id: "c6", name: "Rachel Kim",       title: "Principal",         firm: "William Blair",          type: "Banker",     deal: "Nova Health Systems" },
+  { id: "c7", name: "James Whitfield", title: "CEO",               firm: "Nova Health Systems",    type: "Founder",    deal: "Nova Health Systems" },
+  { id: "c8", name: "Anne Delacroix",  title: "LP Relations",      firm: "Brookfield",             type: "LP",         deal: "" },
+]
+
+const MEETINGS = [
+  { id: "m1", title: "Badia Spices — Management Presentation", deal: "Badia Spices",       date: "2026-04-21", type: "Mgmt Pres.",  summary: "Strong management team, SKU rationalisation opportunity, Walmart concentration risk, 15-20% rollover." },
+  { id: "m2", title: "Goldman — Process Update Call",          deal: "Badia Spices",       date: "2026-04-17", type: "Call",        summary: "6 parties in round 2. Bid deadline May 12. 9-12x range expected. Debt market supportive at 5.5x." },
+  { id: "m3", title: "Meridian Logistics — QoE Kickoff",       deal: "Meridian Logistics", date: "2026-04-19", type: "Diligence",   summary: "FTI engaged. Revenue recognition conservative. WC normalisation +$2M EBITDA. Customer concentration risk." },
+  { id: "m4", title: "Nova Health Systems — Intro Call",       deal: "Nova Health",        date: "2026-04-08", type: "Intro Call",  summary: "22-location dental and primary care platform. 65% commercial payor mix. 18% same-store growth YoY." },
+  { id: "m5", title: "IC Meeting — ClearPath Analytics",       deal: "ClearPath",          date: "2026-04-20", type: "IC Meeting",  summary: "IC approved at up to $165M EV. Conditions: 10% mgmt rollover, ARR ratchet, standard reps. Proceed to exclusivity." },
+  { id: "m6", title: "JPMorgan — Debt Financing Discussion",   deal: "Badia Spices",       date: "2026-04-15", type: "Call",        summary: "JPM can commit $272M senior secured at L+350. 5.5x EBITDA, 7yr term. Soft-circled pending credit committee." },
+]
+
+const NOTES = [
+  { id: "n1", title: "Competitive Landscape — Badia Spices",  deal: "Badia Spices",  date: "2026-04-14", content: "McCormick public comps at 12.4x NTM EBITDA. Badia moat: brand loyalty in Hispanic segment and 1,400+ SKU breadth. Private label risk real but margins have held." },
+  { id: "n2", title: "IC Memo — Bear/Base/Bull Analysis",     deal: "Badia Spices",  date: "2026-04-22", content: "Base case: 11.0x exit, year 5, $118M EBITDA, 2.6x MOIC, 21% IRR. Bear: 1.9x MOIC. Bull: 3.4x MOIC at 13x exit multiple." },
+  { id: "n3", title: "Meridian — Customer Concentration Note", deal: "Meridian",      date: "2026-04-19", content: "Top 3 customers = 44% of revenue. Driver cost structure under review. Fleet ownership vs lease mix important for WC normalisation." },
+]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Message {
-  role: "user" | "assistant"
-  content: string
-  citations?: Citation[]
+type ResultSection = {
+  type: "deal" | "contact" | "meeting" | "note"
+  label: string
+  icon: React.ElementType
+  color: string
+  items: ResultItem[]
 }
 
-interface Citation {
-  type: "deal" | "contact" | "company" | "meeting"
-  label: string
+type ResultItem = {
+  id: string
+  title: string
+  subtitle: string
+  meta: string
   href: string
 }
 
-// ── Suggested queries ─────────────────────────────────────────────────────────
+// ── Search logic ──────────────────────────────────────────────────────────────
+
+function search(q: string): ResultSection[] {
+  const term = q.toLowerCase().trim()
+  if (!term) return []
+
+  const matchStr = (...strs: (string | undefined)[]) =>
+    strs.some((s) => s?.toLowerCase().includes(term))
+
+  const dealHits: ResultItem[] = DEALS
+    .filter((d) => matchStr(d.name, d.sector, d.stage, d.banker))
+    .map((d) => ({
+      id: d.id,
+      title: d.name,
+      subtitle: `${d.stage} · ${d.banker}`,
+      meta: `${d.ev} EV · ${d.ebitda} EBITDA`,
+      href: `/deals/${d.id}`,
+    }))
+
+  const contactHits: ResultItem[] = CONTACTS
+    .filter((c) => matchStr(c.name, c.firm, c.title, c.type, c.deal))
+    .map((c) => ({
+      id: c.id,
+      title: c.name,
+      subtitle: `${c.title} · ${c.firm}`,
+      meta: c.deal ? `Deal: ${c.deal}` : c.type,
+      href: `/contacts`,
+    }))
+
+  const meetingHits: ResultItem[] = MEETINGS
+    .filter((m) => matchStr(m.title, m.deal, m.type, m.summary))
+    .map((m) => ({
+      id: m.id,
+      title: m.title,
+      subtitle: `${m.type} · ${m.deal}`,
+      meta: formatDate(m.date),
+      href: `/meetings`,
+    }))
+
+  const noteHits: ResultItem[] = NOTES
+    .filter((n) => matchStr(n.title, n.deal, n.content))
+    .map((n) => ({
+      id: n.id,
+      title: n.title,
+      subtitle: `Note · ${n.deal}`,
+      meta: formatDate(n.date),
+      href: `/deals/${n.deal.toLowerCase().split(" ")[0]}`,
+    }))
+
+  const sections: ResultSection[] = [
+    { type: "deal",    label: "Deals",    icon: Briefcase,    color: "text-[#0f2d5c]  bg-[#0f2d5c]/8",  items: dealHits    },
+    { type: "contact", label: "Contacts", icon: Users,        color: "text-violet-600 bg-violet-50",     items: contactHits },
+    { type: "meeting", label: "Meetings", icon: CalendarDays, color: "text-sky-600    bg-sky-50",        items: meetingHits },
+    { type: "note",    label: "Notes",    icon: FileText,     color: "text-amber-600  bg-amber-50",      items: noteHits    },
+  ]
+
+  return sections.filter((s) => s.items.length > 0)
+}
 
 const SUGGESTIONS = [
-  "What's the status of the Badia Spices deal?",
-  "Which deals are at LOI stage?",
-  "Show me all overdue tasks",
-  "Summarise the Goldman process update",
-  "Who is the banker on Meridian Logistics?",
-  "What are the key risks for Badia?",
-  "Which contacts haven't been reached in 30+ days?",
-  "What did we discuss in the ClearPath IC meeting?",
+  "Badia Spices", "Goldman", "LOI", "due diligence",
+  "management presentation", "IC approved", "Meridian", "lender",
 ]
-
-// ── Context snapshot sent with every query ────────────────────────────────────
-
-const CONTEXT = `
-You are DealFlow OS, an AI assistant embedded in a private equity CRM platform.
-You have access to the following deal and contact data:
-
-DEALS:
-- Badia Spices | Stage: LOI | EV: $952M | EBITDA: $85M | Multiple: 11.2x | Banker: Goldman Sachs (Marcus Reinholt) | Lead: James Dixon | Team: JD, SR, MK | Status: Active | Priority: High | Process deadline: May 12 2026 | IC: May 20 2026 | Description: Leading spices & seasonings manufacturer, 55yr history, Miami FL, family-owned, 1400+ SKUs, 27% EBITDA margin, Walmart ~28% customer concentration, management willing to roll 15-20%.
-- Meridian Logistics | Stage: Due Diligence | EV: $422M | EBITDA: $38M | Multiple: 11.1x | Banker: Jefferies (Derek Cho) | Lead: Sarah Reynolds | Status: Active | QoE underway with FTI.
-- Nova Health Systems | Stage: Management Meeting | EV: $281M | EBITDA: $24M | Multiple: 11.7x | Banker: William Blair (Rachel Kim) | Lead: James Dixon | Status: Active | 22-location dental/primary care platform, Tennessee & Kentucky.
-- ClearPath Analytics | Stage: IC Approved | EV: $162M | EBITDA: $9M | Multiple: 18x | Banker: Houlihan Lokey | Lead: Thomas Laurier | Status: Active | 52% ARR growth, insurance analytics SaaS.
-- Peak Industrial | Stage: Initial Review | EV: $190M | EBITDA: $19M | Banker: Baird | Status: Active | Low priority.
-
-CONTACTS:
-- Marcus Reinholt | MD, Goldman Sachs | Banker | Warmth: 5/5 | Deal: Badia Spices
-- Sofia Badia | CEO & Founder, Badia Spices | Founder | Warmth: 4/5
-- Derek Cho | VP, Jefferies | Banker | Warmth: 3/5 | Deal: Meridian Logistics
-- Priya Venkatesh | CFO, Meridian Logistics | Management | Warmth: 4/5
-- Thomas Laurier | Director Lev Fin, JPMorgan | Lender | Warmth: 3/5 | Deals: Badia, Meridian
-- Rachel Kim | Principal, William Blair | Banker | Warmth: 2/5 | Deal: Nova
-- James Whitfield | CEO, Nova Health Systems | Founder | Warmth: 3/5
-- Anne Delacroix | LP Relations, Brookfield | LP | Warmth: 4/5 | Co-invest appetite up to $150M
-
-RECENT MEETINGS:
-- Apr 21: Badia Spices Management Presentation (JD, SR, MK, Sofia Badia, Marcus Reinholt). Summary: Strong mgmt team, SKU rationalisation opportunity, Walmart concentration risk, management to roll 15-20%.
-- Apr 20: ClearPath IC Meeting — APPROVED at up to $165M EV. Conditions: mgmt rollover min 10%, ARR ratchet, standard reps.
-- Apr 19: Meridian QoE Kickoff with FTI. Revenue recognition conservative. WC normalisation +$2M EBITDA.
-- Apr 17: Goldman Process Update — 6 parties in round 2, bid deadline May 12, 9-12x range expected.
-
-OPEN TASKS (OVERDUE):
-- Send revised LOI to Goldman [JD, overdue]
-- Request 5-yr historical P&L [MK, overdue]
-- Schedule Badia plant visit [JD, overdue]
-- Obtain Meridian fleet schedule [SR, overdue]
-
-Answer questions concisely and accurately based on this data. Format key figures in bold. Use bullet points for lists. If something isn't in the data, say so clearly.
-`.trim()
-
-// ── Streaming fetch ────────────────────────────────────────────────────────────
-
-async function streamQuery(
-  query: string,
-  history: Message[],
-  onChunk: (chunk: string) => void,
-  onCitations: (c: Citation[]) => void
-): Promise<void> {
-  const res = await fetch("/api/ai-search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, history, context: CONTEXT }),
-  })
-
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(err || "API error")
-  }
-
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error("No response body")
-
-  const decoder = new TextDecoder()
-  let buffer = ""
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split("\n")
-    buffer = lines.pop() ?? ""
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6).trim()
-        if (data === "[DONE]") return
-        try {
-          const parsed = JSON.parse(data)
-          if (parsed.type === "text")       onChunk(parsed.text)
-          if (parsed.type === "citations")  onCitations(parsed.citations)
-        } catch {}
-      }
-    }
-  }
-}
-
-// ── Citation pill ─────────────────────────────────────────────────────────────
-
-const CITATION_ICON: Record<string, React.ReactNode> = {
-  deal:    <Briefcase   className="h-3 w-3" />,
-  contact: <Users       className="h-3 w-3" />,
-  company: <Building2   className="h-3 w-3" />,
-  meeting: <CalendarDays className="h-3 w-3" />,
-}
-
-function CitationPill({ c }: { c: Citation }) {
-  return (
-    <a
-      href={c.href}
-      className="inline-flex items-center gap-1 rounded-full border border-[#e5e7eb] bg-[#f4f5f7] px-2.5 py-1 text-[11px] font-medium text-[#4b5563] transition-colors hover:border-[#0f2d5c]/30 hover:bg-[#0f2d5c]/5 hover:text-[#0f2d5c]"
-    >
-      {CITATION_ICON[c.type]}
-      {c.label}
-    </a>
-  )
-}
-
-// ── Message bubble ─────────────────────────────────────────────────────────────
-
-function MessageBubble({ msg }: { msg: Message }) {
-  if (msg.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-lg rounded-2xl rounded-tr-sm bg-[#0f2d5c] px-4 py-2.5 text-sm text-white">
-          {msg.content}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0f2d5c]/10 mt-0.5">
-        <Sparkles className="h-3.5 w-3.5 text-[#0f2d5c]" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-2">
-        <div
-          className="prose prose-sm max-w-none text-[#1a1a2e] leading-relaxed"
-          dangerouslySetInnerHTML={{
-            __html: msg.content
-              .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-              .replace(/^- (.+)$/gm, "<li>$1</li>")
-              .replace(/(<li>.*<\/li>)/s, "<ul class='pl-4 space-y-1 my-1'>$1</ul>")
-              .replace(/\n/g, "<br/>"),
-          }}
-        />
-        {msg.citations && msg.citations.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {msg.citations.map((c, i) => (
-              <CitationPill key={i} c={c} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SearchPage() {
-  const [messages, setMessages]   = useState<Message[]>([])
-  const [input, setInput]         = useState("")
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
-  const [history, setHistory]     = useState<{ date: string; query: string }[]>([])
-  const bottomRef                 = useRef<HTMLDivElement>(null)
-  const inputRef                  = useRef<HTMLInputElement>(null)
+  const [query, setQuery] = useState("")
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
-
-  async function submit(query: string) {
-    if (!query.trim() || loading) return
-
-    const userMsg: Message = { role: "user", content: query }
-    setMessages((prev) => [...prev, userMsg])
-    setInput("")
-    setLoading(true)
-    setError(null)
-    setHistory((prev) => [{ date: new Date().toLocaleTimeString(), query }, ...prev.slice(0, 9)])
-
-    const assistantMsg: Message = { role: "assistant", content: "", citations: [] }
-    setMessages((prev) => [...prev, assistantMsg])
-
-    try {
-      await streamQuery(
-        query,
-        messages,
-        (chunk) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              content: next[next.length - 1].content + chunk,
-            }
-            return next
-          })
-        },
-        (citations) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = { ...next[next.length - 1], citations }
-            return next
-          })
-        }
-      )
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Something went wrong"
-      setError(msg)
-      setMessages((prev) => prev.slice(0, -1))
-    } finally {
-      setLoading(false)
-      inputRef.current?.focus()
-    }
-  }
-
-  function clear() {
-    setMessages([])
-    setError(null)
-    inputRef.current?.focus()
-  }
-
-  const isEmpty = messages.length === 0
+  const results = useMemo(() => search(query), [query])
+  const totalHits = results.reduce((s, r) => s + r.items.length, 0)
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem-3rem)] gap-5">
-      {/* Main chat area */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#e5e7eb] px-5 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0f2d5c]/10">
-              <Sparkles className="h-3.5 w-3.5 text-[#0f2d5c]" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[#1a1a2e]">AI Search</p>
-              <p className="text-[10px] text-[#9ca3af]">claude-sonnet-4-6 · DealFlow context</p>
-            </div>
-          </div>
-          {!isEmpty && (
-            <button
-              onClick={clear}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#9ca3af] transition-colors hover:bg-[#f4f5f7] hover:text-[#6b7280]"
-            >
-              <X className="h-3.5 w-3.5" /> Clear
-            </button>
-          )}
-        </div>
-
-        {/* Messages / empty state */}
-        <div className="flex-1 overflow-y-auto px-5 py-5">
-          {isEmpty ? (
-            <div className="flex h-full flex-col items-center justify-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0f2d5c]/8">
-                <Sparkles className="h-7 w-7 text-[#0f2d5c]" />
-              </div>
-              <h2 className="mt-4 text-base font-semibold text-[#1a1a2e]">Ask anything about your deals</h2>
-              <p className="mt-1.5 max-w-xs text-center text-sm text-[#9ca3af]">
-                Search across deals, contacts, meetings, and tasks using natural language.
-              </p>
-              <div className="mt-6 grid grid-cols-2 gap-2 w-full max-w-xl">
-                {SUGGESTIONS.slice(0, 6).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => submit(s)}
-                    className="flex items-center gap-2 rounded-lg border border-[#e5e7eb] bg-[#fafafa] px-3.5 py-2.5 text-left text-xs text-[#4b5563] transition-colors hover:border-[#0f2d5c]/30 hover:bg-[#0f2d5c]/5 hover:text-[#0f2d5c]"
-                  >
-                    <ArrowRight className="h-3 w-3 shrink-0 text-[#9ca3af]" />
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {messages.map((msg, i) => (
-                <MessageBubble key={i} msg={msg} />
-              ))}
-              {loading && messages[messages.length - 1]?.role === "user" && (
-                <div className="flex gap-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0f2d5c]/10">
-                    <Sparkles className="h-3.5 w-3.5 text-[#0f2d5c]" />
-                  </div>
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#0f2d5c]/40 [animation-delay:-0.3s]" />
-                    <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#0f2d5c]/40 [animation-delay:-0.15s]" />
-                    <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#0f2d5c]/40" />
-                  </div>
-                </div>
-              )}
-              {error && (
-                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {error}
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-[#e5e7eb] p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-[#e5e7eb] bg-[#fafafa] px-4 py-2.5 focus-within:border-[#0f2d5c]/40 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0f2d5c]/10 transition-all">
-            <Search className="h-4 w-4 shrink-0 text-[#9ca3af]" />
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input) } }}
-              placeholder="Ask about deals, contacts, tasks, or meetings…"
-              className="flex-1 bg-transparent text-sm text-[#1a1a2e] placeholder:text-[#9ca3af] focus:outline-none"
-              disabled={loading}
-            />
-            <button
-              onClick={() => submit(input)}
-              disabled={!input.trim() || loading}
-              className={cn(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
-                input.trim() && !loading
-                  ? "bg-[#0f2d5c] text-white hover:bg-[#0f2d5c]/90"
-                  : "bg-[#e5e7eb] text-[#9ca3af]"
-              )}
-            >
-              {loading
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <CornerDownLeft className="h-3.5 w-3.5" />
-              }
-            </button>
-          </div>
-          <p className="mt-1.5 text-center text-[10px] text-[#9ca3af]">
-            Answers grounded in your live deal data · claude-sonnet-4-6
-          </p>
-        </div>
+    <div className="mx-auto max-w-2xl space-y-5">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold text-[#1a1a2e]">Search</h1>
+        <p className="mt-0.5 text-sm text-[#6b7280]">
+          Search across deals, contacts, meetings, and notes
+        </p>
       </div>
 
-      {/* Sidebar — suggestions + history */}
-      <div className="flex w-56 shrink-0 flex-col gap-4">
-        {/* Suggested */}
-        <div className="rounded-xl border border-[#e5e7eb] bg-white p-4">
-          <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wide text-[#9ca3af]">
-            Suggested
-          </p>
-          <div className="space-y-1">
-            {SUGGESTIONS.slice(0, 5).map((s) => (
+      {/* Search input */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Type to search…"
+          className="h-11 w-full rounded-xl border border-[#e5e7eb] bg-white pl-11 pr-10 text-sm text-[#1a1a2e] shadow-sm placeholder:text-[#9ca3af] focus:border-[#0f2d5c]/40 focus:outline-none focus:ring-2 focus:ring-[#0f2d5c]/15 transition-all"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-[#9ca3af] hover:text-[#6b7280] transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Suggestions (empty state) */}
+      {!query && (
+        <div>
+          <p className="mb-2.5 text-xs font-medium text-[#9ca3af]">Try searching for</p>
+          <div className="flex flex-wrap gap-2">
+            {SUGGESTIONS.map((s) => (
               <button
                 key={s}
-                onClick={() => submit(s)}
-                disabled={loading}
-                className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#4b5563] transition-colors hover:bg-[#f4f5f7] hover:text-[#0f2d5c]"
+                onClick={() => setQuery(s)}
+                className="rounded-full border border-[#e5e7eb] bg-white px-3 py-1.5 text-xs text-[#4b5563] transition-colors hover:border-[#0f2d5c]/30 hover:bg-[#0f2d5c]/5 hover:text-[#0f2d5c]"
               >
-                <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-[#9ca3af]" />
-                <span className="leading-snug">{s}</span>
+                {s}
               </button>
             ))}
           </div>
         </div>
+      )}
 
-        {/* Recent */}
-        {history.length > 0 && (
-          <div className="rounded-xl border border-[#e5e7eb] bg-white p-4">
-            <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wide text-[#9ca3af]">
-              Recent
-            </p>
-            <div className="space-y-1">
-              {history.map((h, i) => (
-                <button
-                  key={i}
-                  onClick={() => submit(h.query)}
-                  disabled={loading}
-                  className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#4b5563] transition-colors hover:bg-[#f4f5f7]"
-                >
-                  <Clock className="mt-0.5 h-3 w-3 shrink-0 text-[#9ca3af]" />
-                  <span className="truncate leading-snug">{h.query}</span>
-                </button>
-              ))}
+      {/* Results */}
+      {query && (
+        <>
+          {totalHits === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#e5e7eb] py-14 text-sm text-[#9ca3af]">
+              <Search className="mb-2 h-6 w-6 text-[#d1d5db]" />
+              No results for &ldquo;{query}&rdquo;
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs text-[#9ca3af]">
+                {totalHits} result{totalHits !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
+              </p>
+
+              {results.map((section) => {
+                const [textColor, bgColor] = section.color.split(" ")
+                return (
+                  <div key={section.type} className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
+                    {/* Section header */}
+                    <div className="flex items-center gap-2 border-b border-[#f4f5f7] bg-[#fafafa] px-4 py-2.5">
+                      <div className={cn("flex h-5 w-5 items-center justify-center rounded-md", bgColor)}>
+                        <section.icon className={cn("h-3 w-3", textColor)} />
+                      </div>
+                      <span className="text-xs font-semibold text-[#1a1a2e]">{section.label}</span>
+                      <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#e5e7eb] text-[9px] font-semibold text-[#6b7280]">
+                        {section.items.length}
+                      </span>
+                    </div>
+
+                    {/* Result rows */}
+                    <div className="divide-y divide-[#f9fafb]">
+                      {section.items.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={item.href}
+                          className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[#fafafa]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-[#1a1a2e] group-hover:text-[#0f2d5c] transition-colors">
+                              <Highlight text={item.title} query={query} />
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#9ca3af]">
+                              <Highlight text={item.subtitle} query={query} />
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs text-[#9ca3af]">{item.meta}</span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[#d1d5db] transition-colors group-hover:text-[#0f2d5c]" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
+  )
+}
+
+// ── Highlight matching text ───────────────────────────────────────────────────
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded bg-amber-100 px-0.5 text-amber-800 not-italic">
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
   )
 }
