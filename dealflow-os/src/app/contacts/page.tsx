@@ -11,7 +11,7 @@ import {
   Filter,
   Mail,
   Phone,
-  Linkedin,
+  Link,
   ChevronDown,
   Circle,
 } from "lucide-react"
@@ -401,7 +401,7 @@ export default function ContactsPage() {
                           rel="noopener noreferrer"
                           className="flex h-7 w-7 items-center justify-center rounded-md text-[#9ca3af] transition-colors hover:bg-[#e5e7eb] hover:text-[#1a1a2e]"
                         >
-                          <Linkedin className="h-3.5 w-3.5" />
+                          <Link className="h-3.5 w-3.5" />
                         </a>
                       )}
                     </div>

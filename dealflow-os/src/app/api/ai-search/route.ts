@@ -92,10 +92,9 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
-        function send(data: object) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
-          )
+        function send(data: object | string) {
+          const payload = typeof data === "string" ? data : JSON.stringify(data)
+          controller.enqueue(encoder.encode(`data: ${payload}\n\n`))
         }
 
         try {
